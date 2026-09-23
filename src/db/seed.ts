@@ -12,9 +12,16 @@ import { ensureBoosterPresets } from './boosterPresets.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
+export async function migrateAdminEmail(conn: { execute: Connection['execute'] }): Promise<void> {
+  await conn.execute(
+    "UPDATE users SET email = 'admin@anacra.local' WHERE email = 'admin@arcana.local'",
+  );
+}
+
 export async function ensureUsers(conn: Connection): Promise<void> {
+  await migrateAdminEmail(conn);
   const passwordHash = bcrypt.hashSync('password', 10);
-  const email = 'admin@arcana.local';
+  const email = 'admin@anacra.local';
   const username = 'admin';
 
   const [rows] = await conn.execute<RowDataPacket[]>('SELECT id FROM users WHERE email = ?', [email]);
@@ -28,17 +35,17 @@ export async function ensureUsers(conn: Connection): Promise<void> {
   }
 
   await conn.execute(
-    'UPDATE users SET password_hash = ?, username = ?, role = ? WHERE email = ?',
-    [passwordHash, username, 'admin', email],
+    'UPDATE users SET username = ?, role = ? WHERE email = ?',
+    [username, 'admin', email],
   );
-  console.log(`✅ User ${email} updated`);
+  console.log(`✅ User ${email} already present (password unchanged)`);
 }
 
 const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (isDirectRun) {
   const connection = await mysql.createConnection({
     ...getDbConnectionOptions(),
-    database: process.env.DB_NAME || 'arcana_pack',
+    database: process.env.DB_NAME || 'anacra_pack',
   });
   try {
     await ensureUsers(connection);

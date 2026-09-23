@@ -591,7 +591,7 @@ function normalizeDraft(raw: Record<string, unknown>, gif?: GifMeta): AiCardDraf
     borderFinish: pickEnum(raw.borderFinish, BORDER_FINISHES, 'matte'),
     power: hasStats ? asInt(raw.power, 0, 20) : null,
     toughness: hasStats ? asInt(raw.toughness, 0, 20) : null,
-    artist: clip(raw.artist, 80) || 'Atelier Arcana',
+    artist: clip(raw.artist, 80) || 'Atelier Anacra',
     artUrl: gif?.still || null,
     artAnimatedUrl: gif?.gif || null,
     giphyUrl: gif?.gif || originGiphyUrl(typeof raw.giphyUrl === 'string' ? raw.giphyUrl : null),

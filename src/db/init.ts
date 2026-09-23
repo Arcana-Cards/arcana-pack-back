@@ -17,7 +17,7 @@ export async function initDatabase() {
   const connection = await mysql.createConnection(getDbConnectionOptions());
 
   try {
-    const dbName = process.env.DB_NAME || 'arcana_pack';
+    const dbName = process.env.DB_NAME || 'anacra_pack';
     await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
     await connection.query(`USE \`${dbName}\`;`);
 
@@ -32,7 +32,7 @@ export async function initDatabase() {
     await ensureBoosterPresets();
 
     console.log('✅ Database initialized successfully!');
-    console.log('👤 Admin: admin@arcana.local / password');
+    console.log('👤 Admin: admin@anacra.local / password');
   } catch (error) {
     console.error('❌ Database initialization failed:', error);
     throw error;

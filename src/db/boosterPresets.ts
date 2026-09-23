@@ -156,7 +156,7 @@ function packSvg(id: string, name: string, accent: string, light: string): strin
   <circle cx="140" cy="168" r="32" fill="none" stroke="#fff6d8" stroke-width="1.2" opacity="0.45"/>
   <text x="140" y="180" text-anchor="middle" font-size="30" fill="#1a1204">✦</text>
   <text x="140" y="292" text-anchor="middle" font-family="Palatino, Georgia, serif" font-size="26" fill="#f4efe6">${name}</text>
-  <text x="140" y="322" text-anchor="middle" font-size="11" letter-spacing="4" fill="${accent}">ARCANA PACK</text>
+  <text x="140" y="322" text-anchor="middle" font-size="11" letter-spacing="4" fill="${accent}">ANACRA PACK</text>
   <text x="140" y="360" text-anchor="middle" font-size="10" fill="#f4efe6" opacity="0.55">BOOSTER</text>
 </svg>
 `;
@@ -165,7 +165,7 @@ function packSvg(id: string, name: string, accent: string, light: string): strin
 export function writeBoosterArtFiles(): void {
   const dir = boosterArtDir();
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'default.svg'), packSvg('default', 'Arcana', '#c9a227', '#3d2a12'));
+  fs.writeFileSync(path.join(dir, 'default.svg'), packSvg('default', 'Anacra', '#c9a227', '#3d2a12'));
   for (const preset of BOOSTER_PRESETS) {
     fs.writeFileSync(path.join(dir, `${preset.key}.svg`), packSvg(preset.key, preset.name, preset.accent, preset.accentLight));
   }

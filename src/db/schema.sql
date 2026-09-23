@@ -1,4 +1,4 @@
--- Arcana Pack — Database Schema
+-- Anacra Pack — Database Schema
 
 CREATE TABLE IF NOT EXISTS users (
   id INT AUTO_INCREMENT PRIMARY KEY,

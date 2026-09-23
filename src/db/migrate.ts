@@ -51,7 +51,7 @@ export async function runPendingMigrations(): Promise<void> {
   const connection = await mysql.createConnection(getDbConnectionOptions());
 
   try {
-    const dbName = process.env.DB_NAME || 'arcana_pack';
+    const dbName = process.env.DB_NAME || 'anacra_pack';
     await connection.query(`USE \`${dbName}\`;`);
     console.log(`📦 Applying migrations to \`${dbName}\`...`);
     await applyPendingMigrations(connection);

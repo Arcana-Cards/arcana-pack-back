@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { AuthTokenPayload } from '../types/index.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'arcana-pack-secret-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || 'anacra-pack-secret-change-in-production';
 
 export function generateToken(payload: AuthTokenPayload): string {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });

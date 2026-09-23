@@ -6,7 +6,7 @@ pipeline {
     }
 
     environment {
-        IMAGE_NAME = "arcana-pack-back"
+        IMAGE_NAME = "anacra-pack-back"
         REGISTRY_URL = "docker.io"
         REGISTRY_NAMESPACE = "villaroyakevin"
     }

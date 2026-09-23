@@ -14,6 +14,8 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { getDbConnectionOptions } from './db/dbConfig.js';
 import { applyCurrentCatalogSnapshotOnce } from './db/applyCurrentCatalogSnapshot.js';
 import { ensureBoosterPresets, writeBoosterArtFiles } from './db/boosterPresets.js';
+import { migrateAdminEmail } from './db/seed.js';
+import pool from './db/connection.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -44,7 +46,7 @@ app.use('/boosters', express.static(boostersDir));
 app.get('/api/health/live', (_req, res) => {
   res.json({
     success: true,
-    data: { status: 'alive', service: 'arcana-pack', timestamp: new Date().toISOString() },
+    data: { status: 'alive', service: 'anacra-pack', timestamp: new Date().toISOString() },
   });
 });
 
@@ -58,13 +60,13 @@ app.get('/api/health', (req, res) => {
     res.status(503).json({
       success: false,
       error: 'starting',
-      data: { status: 'starting', service: 'arcana-pack', timestamp: new Date().toISOString() },
+      data: { status: 'starting', service: 'anacra-pack', timestamp: new Date().toISOString() },
     });
     return;
   }
   res.json({
     success: true,
-    data: { status: 'ok', service: 'arcana-pack', timestamp: new Date().toISOString() },
+    data: { status: 'ok', service: 'anacra-pack', timestamp: new Date().toISOString() },
   });
 });
 
@@ -76,11 +78,12 @@ app.use('/api/collection', collectionRoutes);
 app.use(errorHandler);
 
 app.listen(PORT, () => {
-  console.log(`🚀 Arcana Pack Backend listening on http://localhost:${PORT}`);
+  console.log(`🚀 Anacra Pack Backend listening on http://localhost:${PORT}`);
   void (async () => {
     const connection = await mysql.createConnection(getDbConnectionOptions());
     try {
       await connection.query('SELECT 1');
+      await migrateAdminEmail(pool);
       await applyCurrentCatalogSnapshotOnce();
       await ensureBoosterPresets();
     } finally {

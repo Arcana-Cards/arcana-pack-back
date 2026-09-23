@@ -82,7 +82,7 @@ async function replaceCatalog(): Promise<void> {
 
     const [adminRows] = await conn.execute<RowDataPacket[]>(
       'SELECT id FROM users WHERE email = ? LIMIT 1',
-      ['admin@arcana.local'],
+      ['admin@anacra.local'],
     );
     const createdBy = adminRows.length ? Number(adminRows[0].id) : null;
 
