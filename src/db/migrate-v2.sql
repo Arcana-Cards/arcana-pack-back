@@ -1,0 +1,2 @@
+ALTER TABLE cards
+  ADD COLUMN art_url VARCHAR(500) NULL AFTER art_seed;

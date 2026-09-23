@@ -1,0 +1,8 @@
+node_modules
+dist
+.env
+.git
+*.log
+npm-debug.log*
+uploads/cards/*
+!uploads/cards/.gitkeep
