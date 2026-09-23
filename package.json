@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc && mkdir -p dist/db/snapshot-art && cp src/db/snapshot-art/* dist/db/snapshot-art/",
     "start": "node dist/index.js",
     "db:init": "tsx src/db/init.ts",
     "db:migrate": "tsx src/db/migrate.ts",

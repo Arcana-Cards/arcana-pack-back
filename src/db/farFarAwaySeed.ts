@@ -1,6 +1,7 @@
 import type { Connection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { defaultBackColor, defaultBorder, defaultGlow } from '../services/cardVisuals.js';
 import { defaultWeights } from '../services/mappers.js';
+import { catalogSnapshotAlreadyApplied } from './applyCurrentCatalogSnapshot.js';
 import { FAR_FAR_AWAY_BOOSTER, FAR_FAR_AWAY_CARDS, FAR_FAR_AWAY_EDITION, FAR_FAR_AWAY_UNIVERSE } from './farFarAwayCatalog.js';
 import { generateFarFarAwayArt, publicArtUrls } from './farFarAwayArt.js';
 
@@ -48,6 +49,10 @@ async function upsertEdition(conn: Connection, universeId: number): Promise<numb
 }
 
 export async function ensureFarFarAwayCatalog(conn: Connection): Promise<void> {
+  if (await catalogSnapshotAlreadyApplied()) {
+    console.log('📦 Snapshot catalogue actif — seed Extrêmement Loin ignoré');
+    return;
+  }
   const art = generateFarFarAwayArt();
   console.log(`🎨 Art Extrêmement Loin généré (${art.png} stills, ${art.gif} GIF)`);
 

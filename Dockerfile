@@ -11,7 +11,9 @@ COPY tsconfig.json ./
 COPY src ./src
 
 RUN npm run build
-RUN cp src/db/*.sql dist/db/
+RUN cp src/db/*.sql dist/db/ \
+  && mkdir -p dist/db/snapshot-art \
+  && cp src/db/snapshot-art/* dist/db/snapshot-art/
 
 FROM node:22-alpine AS runner
 

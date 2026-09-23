@@ -5,6 +5,7 @@ import path from 'path';
 import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
 import { getDbConnectionOptions } from './dbConfig.js';
+import { applyCurrentCatalogSnapshotOnce } from './applyCurrentCatalogSnapshot.js';
 import { ensureFarFarAwayCatalog } from './farFarAwaySeed.js';
 import { ensureBoosterPresets } from './boosterPresets.js';
 
@@ -41,6 +42,7 @@ if (isDirectRun) {
   });
   try {
     await ensureUsers(connection);
+    await applyCurrentCatalogSnapshotOnce();
     await ensureFarFarAwayCatalog(connection);
     await ensureBoosterPresets();
   } finally {

@@ -12,6 +12,7 @@ import adminRoutes from './routes/adminRoutes.js';
 import collectionRoutes from './routes/collectionRoutes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { getDbConnectionOptions } from './db/dbConfig.js';
+import { applyCurrentCatalogSnapshotOnce } from './db/applyCurrentCatalogSnapshot.js';
 import { ensureBoosterPresets, writeBoosterArtFiles } from './db/boosterPresets.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -80,6 +81,7 @@ app.listen(PORT, () => {
     const connection = await mysql.createConnection(getDbConnectionOptions());
     try {
       await connection.query('SELECT 1');
+      await applyCurrentCatalogSnapshotOnce();
       await ensureBoosterPresets();
     } finally {
       await connection.end();

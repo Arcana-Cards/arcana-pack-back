@@ -7,6 +7,7 @@ import { applyPendingMigrations } from './migrate.js';
 import { getDbConnectionOptions } from './dbConfig.js';
 import { ensureUsers } from './seed.js';
 import { ensureFarFarAwayCatalog } from './farFarAwaySeed.js';
+import { applyCurrentCatalogSnapshotOnce } from './applyCurrentCatalogSnapshot.js';
 import { ensureBoosterPresets } from './boosterPresets.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -26,6 +27,7 @@ export async function initDatabase() {
 
     await applyPendingMigrations(connection);
     await ensureUsers(connection);
+    await applyCurrentCatalogSnapshotOnce();
     await ensureFarFarAwayCatalog(connection);
     await ensureBoosterPresets();
 
