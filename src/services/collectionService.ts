@@ -95,7 +95,7 @@ export async function openBooster(userId: number, boosterId: number): Promise<Pu
       const dropChance = rarityProbability(weights, picked.rarity as Rarity, floor) * 100;
       pulledIds.push(picked.id as number);
 
-      const foil = Boolean(picked.foil) || Math.random() * 100 < template.foilChance;
+      const foil = Math.random() * 100 < template.foilChance;
       const animated = Boolean(picked.animated) || Math.random() * 100 < template.animatedChance;
       const serial = makeSerial(picked.edition_code as string, picked.collector_number as number);
 
@@ -124,7 +124,7 @@ export async function openBooster(userId: number, boosterId: number): Promise<Pu
         isNew: owned.length === 0,
         copies: Number(countRows[0].n),
         dropChance,
-        card: { ...card, foil, animated },
+        card: { ...card, foil: false, animated },
       });
     }
 

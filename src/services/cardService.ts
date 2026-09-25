@@ -8,7 +8,6 @@ import {
   CARD_KINDS,
   CARD_STYLES,
   FRAME_STYLES,
-  HOLOFOIL_PATTERNS,
   MAGIC_TYPES,
   RARITIES,
   kindHasCombatStats,
@@ -36,11 +35,10 @@ export function normalizeCardInput(body: Partial<CardInput>, partial = false): C
   const style = body.style ? assertEnum(body.style, CARD_STYLES, 'style') : 'painterly';
   const magicType = body.magicType ? assertEnum(body.magicType, MAGIC_TYPES, 'magicType') : 'none';
   const frameStyle = body.frameStyle ? assertEnum(body.frameStyle, FRAME_STYLES, 'frameStyle') : 'classic';
-  const holofoilPattern = body.holofoilPattern
-    ? assertEnum(body.holofoilPattern, HOLOFOIL_PATTERNS, 'holofoilPattern')
-    : rarity === 'common' ? 'none' : 'linear';
+  const holofoilPattern = 'none';
   const kind = body.kind ? assertEnum(body.kind, CARD_KINDS, 'kind') : 'creature';
-  const artFilter = body.artFilter ? assertEnum(body.artFilter, ART_FILTERS, 'artFilter') : 'none';
+  const rawFilter = body.artFilter ? assertEnum(body.artFilter, ART_FILTERS, 'artFilter') : 'none';
+  const artFilter = rawFilter === 'holo' || rawFilter === 'shiny' ? 'none' : rawFilter;
   const borderFinish = body.borderFinish ? assertEnum(body.borderFinish, BORDER_FINISHES, 'borderFinish') : 'matte';
   const hasStats = kindHasCombatStats(kind);
   const unlockRaw = body.animatedUnlockCopies != null ? Number(body.animatedUnlockCopies) : 5;
@@ -65,7 +63,7 @@ export function normalizeCardInput(body: Partial<CardInput>, partial = false): C
     kind,
     subtype: body.subtype?.trim() || null,
     rarity,
-    foil: Boolean(body.foil),
+    foil: false,
     animated: Boolean(body.animated),
     borderColor: defaultBorder(rarity),
     backColor: body.backColor || defaultBackColor(style),

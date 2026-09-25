@@ -167,10 +167,10 @@ function planRarities(theme: string, count: number): Rarity[] {
 }
 
 function looksFor(rarity: Rarity): { artFilter: ArtFilter; borderFinish: BorderFinish } {
-  if (rarity === 'mythic') return { artFilter: 'holo', borderFinish: 'prism' };
-  if (rarity === 'legendary') return { artFilter: 'holo', borderFinish: 'neon' };
-  if (rarity === 'epic') return { artFilter: 'holo', borderFinish: 'metallic' };
-  if (rarity === 'rare') return { artFilter: 'shiny', borderFinish: 'shiny' };
+  if (rarity === 'mythic') return { artFilter: 'none', borderFinish: 'prism' };
+  if (rarity === 'legendary') return { artFilter: 'none', borderFinish: 'neon' };
+  if (rarity === 'epic') return { artFilter: 'none', borderFinish: 'metallic' };
+  if (rarity === 'rare') return { artFilter: 'none', borderFinish: 'shiny' };
   return { artFilter: 'none', borderFinish: 'matte' };
 }
 
@@ -754,7 +754,7 @@ export function draftToInput(draft: AiCardDraft, universeId: number, editionId: 
     artist: draft.artist,
     artSeed: draft.artSeed,
     artUrl: draft.artUrl,
-    artFilter: draft.artFilter,
+    artFilter: 'none',
     borderFinish: draft.borderFinish,
     artAnimatedUrl: draft.artAnimatedUrl,
     giphyUrl: draft.giphyUrl,

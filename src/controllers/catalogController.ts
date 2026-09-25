@@ -4,8 +4,9 @@ import path from 'path';
 import { listCards, getCard, createCard, createCards, updateCard, deleteCard, normalizeCardInput, ensureCollectorOrder } from '../services/cardService.js';
 import { aiStatus, draftFromGif, draftsFromTheme, searchGiphyGifs, type AiProgressEvent } from '../services/aiCardService.js';
 import { createEdition, createUniverse, deleteEdition, deleteUniverse, listEditions, listUniverses, updateEdition, updateUniverse } from '../services/catalogService.js';
-import { createTemplate, deleteTemplate, grantBoosters, listTemplates, updateTemplate } from '../services/boosterService.js';
+import { createTemplate, deleteTemplate, grantBoosters, grantBoostersBatch, listTemplates, updateTemplate } from '../services/boosterService.js';
 import { listUsers } from '../services/authService.js';
+import { jiraConfigured, jiraStatusDetailed, listJiraBoards, listJiraSprints, sprintRewardGuide } from '../services/jiraService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import type { Rarity } from '../types/index.js';
 
@@ -314,6 +315,54 @@ export async function postGrant(req: Request, res: Response, next: NextFunction)
       req.user!.userId,
     );
     res.status(201).json({ success: true, data: { granted: ids.length, ids } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function postGrantBatch(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const grants = Array.isArray(req.body?.grants) ? req.body.grants : [];
+    const data = await grantBoostersBatch(grants, req.user!.userId);
+    res.status(201).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getJiraStatus(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    res.json({ success: true, data: await jiraStatusDetailed() });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getJiraBoards(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!jiraConfigured()) throw new AppError('Jira n’est pas configuré', 503);
+    res.json({ success: true, data: await listJiraBoards() });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getJiraSprints(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!jiraConfigured()) throw new AppError('Jira n’est pas configuré', 503);
+    const boardId = req.query.boardId ? Number(req.query.boardId) : undefined;
+    res.json({ success: true, data: await listJiraSprints(boardId) });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getJiraSprintRewards(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!jiraConfigured()) throw new AppError('Jira n’est pas configuré', 503);
+    const sprintId = Number(req.params.sprintId);
+    if (!Number.isInteger(sprintId) || sprintId < 1) throw new AppError('Sprint invalide', 400);
+    res.json({ success: true, data: await sprintRewardGuide(sprintId) });
   } catch (error) {
     next(error);
   }

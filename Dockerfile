@@ -26,9 +26,12 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 COPY --from=builder /app/dist ./dist
-
-RUN mkdir -p /app/uploads/cards /app/public/boosters \
-    && chown -R node:node /app/uploads /app/public
+COPY .env.example ./
+COPY .env* ./
+RUN if [ ! -f .env ]; then cp .env.example .env; fi \
+    && mkdir -p /app/uploads/cards /app/public/boosters \
+    && chown -R node:node /app/uploads /app/public /app/.env \
+    && chmod 600 /app/.env
 
 EXPOSE 3001
 

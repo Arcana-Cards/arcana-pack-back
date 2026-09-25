@@ -183,3 +183,20 @@ export async function grantBoosters(userId: number, templateId: number, quantity
   }
   return ids;
 }
+
+export async function grantBoostersBatch(
+  items: Array<{ userId: number; templateId: number; quantity: number }>,
+  grantedBy: number,
+): Promise<Array<{ userId: number; templateId: number; granted: number }>> {
+  if (!Array.isArray(items) || !items.length) throw new AppError('Aucune attribution à faire', 400);
+  if (items.length > 80) throw new AppError('Trop d’attributions d’un coup', 400);
+  const results: Array<{ userId: number; templateId: number; granted: number }> = [];
+  for (const item of items) {
+    const quantity = Math.floor(Number(item.quantity) || 0);
+    if (quantity < 1) continue;
+    const ids = await grantBoosters(Number(item.userId), Number(item.templateId), quantity, grantedBy);
+    results.push({ userId: Number(item.userId), templateId: Number(item.templateId), granted: ids.length });
+  }
+  if (!results.length) throw new AppError('Quantités invalides', 400);
+  return results;
+}

@@ -1,6 +1,6 @@
+import './loadEnv.js';
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -18,7 +18,6 @@ import { migrateAdminEmail } from './db/seed.js';
 import pool from './db/connection.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);

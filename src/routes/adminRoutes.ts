@@ -19,6 +19,11 @@ import {
   postCardsBatch,
   postEdition,
   postGrant,
+  postGrantBatch,
+  getJiraStatus,
+  getJiraBoards,
+  getJiraSprints,
+  getJiraSprintRewards,
   postTemplate,
   postUniverse,
   removeCard,
@@ -59,5 +64,10 @@ router.patch('/boosters/:id', patchTemplate);
 router.delete('/boosters/:id', removeTemplate);
 router.get('/users', getAdminUsers);
 router.post('/users/:id/boosters', postGrant);
+router.post('/users/boosters/batch', postGrantBatch);
+router.get('/jira/status', getJiraStatus);
+router.get('/jira/boards', getJiraBoards);
+router.get('/jira/sprints', getJiraSprints);
+router.get('/jira/sprints/:sprintId/rewards', getJiraSprintRewards);
 
 export default router;

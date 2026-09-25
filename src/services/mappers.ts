@@ -16,6 +16,11 @@ export function asBool(value: unknown): boolean {
   return value === 1 || value === true || value === '1';
 }
 
+function catalogArtFilter(value: CardDto['artFilter'] | null | undefined): CardDto['artFilter'] {
+  if (!value || value === 'holo' || value === 'shiny') return 'none';
+  return value;
+}
+
 export function parseWeights(raw: unknown): RarityWeights {
   const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
   const weights = {} as RarityWeights;
@@ -119,20 +124,20 @@ export function mapCard(row: RowDataPacket): CardDto {
     kind: (row.kind as CardDto['kind']) || 'creature',
     subtype: (row.subtype as string) ?? null,
     rarity: row.rarity as Rarity,
-    foil: asBool(row.foil),
+    foil: false,
     animated: asBool(row.animated),
     borderColor: row.border_color as string,
     backColor: row.back_color as string,
     glowColor: row.glow_color as string,
     textColor: (row.text_color as string) || '#f4efe6',
     frameStyle: row.frame_style,
-    holofoilPattern: row.holofoil_pattern as HolofoilPattern,
+    holofoilPattern: 'none' as HolofoilPattern,
     power: row.power != null ? Number(row.power) : null,
     toughness: row.toughness != null ? Number(row.toughness) : null,
     artist: (row.artist as string) ?? null,
     artSeed: row.art_seed as string,
     artUrl: (row.art_url as string) ?? null,
-    artFilter: (row.art_filter as CardDto['artFilter']) || 'none',
+    artFilter: catalogArtFilter(row.art_filter as CardDto['artFilter']),
     borderFinish: (row.border_finish as CardDto['borderFinish']) || 'matte',
     artAnimatedUrl: (row.art_animated_url as string) ?? null,
     giphyUrl: (row.giphy_url as string) ?? null,
