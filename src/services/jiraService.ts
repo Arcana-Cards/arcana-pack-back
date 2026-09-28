@@ -66,6 +66,8 @@ export type SprintContributor = {
   storyPointsCommitted: number;
   storyPointsStart: number;
   storyPointsAdded: number;
+  storyPointsDoneStart: number;
+  storyPointsDoneAdded: number;
   completionPct: number;
   daysPresent: number;
   daysDefault: number;
@@ -95,6 +97,8 @@ export type SprintMetrics = {
     remaining: number;
     added: number;
     startCommitted: number;
+    completedStart: number;
+    completedAdded: number;
     startPct: number;
     endPct: number;
   };
@@ -380,12 +384,16 @@ type SprintGroup = {
   storyPointsCommitted: number;
   storyPointsStart: number;
   storyPointsAdded: number;
+  storyPointsDoneStart: number;
+  storyPointsDoneAdded: number;
 };
 
 function tallySprint(sprint: JiraSprint, issues: JiraIssue[], fieldId: string | null) {
   const groups = new Map<string, SprintGroup>();
   let committed = 0;
   let completed = 0;
+  let completedStart = 0;
+  let completedAdded = 0;
   let remaining = 0;
   let added = 0;
   let doneCount = 0;
@@ -401,15 +409,17 @@ function tallySprint(sprint: JiraSprint, issues: JiraIssue[], fieldId: string | 
     const bucket = statusBucket(issue);
     const assignee = issue.fields?.assignee;
     committed += points;
+    const midSprint = wasAddedMidSprint(issue, sprint);
     if (bucket === 'done') {
       completed += points;
       doneCount += 1;
+      if (midSprint) completedAdded += points;
+      else completedStart += points;
     } else {
       remaining += points;
       if (bucket === 'progress') progressCount += 1;
       else todoCount += 1;
     }
-    const midSprint = wasAddedMidSprint(issue, sprint);
     if (midSprint) added += points;
     if (isBug(issue)) bugs += 1;
     if (isStory(issue)) stories += 1;
@@ -428,6 +438,8 @@ function tallySprint(sprint: JiraSprint, issues: JiraIssue[], fieldId: string | 
       storyPointsCommitted: 0,
       storyPointsStart: 0,
       storyPointsAdded: 0,
+      storyPointsDoneStart: 0,
+      storyPointsDoneAdded: 0,
     };
     current.issuesTotal += 1;
     current.storyPointsCommitted += points;
@@ -436,6 +448,8 @@ function tallySprint(sprint: JiraSprint, issues: JiraIssue[], fieldId: string | 
     if (bucket === 'done') {
       current.issuesDone += 1;
       current.storyPoints += points;
+      if (midSprint) current.storyPointsDoneAdded += points;
+      else current.storyPointsDoneStart += points;
     } else if (bucket === 'progress') {
       current.issuesInProgress += 1;
     }
@@ -449,7 +463,7 @@ function tallySprint(sprint: JiraSprint, issues: JiraIssue[], fieldId: string | 
   const elapsedRaw = start && daysTotal ? daysBetween(start, now) / daysTotal : (sprint.state === 'closed' ? 1 : 0);
   const elapsedPct = Math.max(0, Math.min(100, Math.round(elapsedRaw * 100)));
   const startCommitted = Math.max(0, committed - added);
-  const endPct = startCommitted > 0 ? pct(completed, startCommitted) : (completed > 0 ? 100 : 0);
+  const endPct = startCommitted > 0 ? pct(completedStart, startCommitted) : (completedStart > 0 ? 100 : 0);
   const daysLeft = plannedEnd ? Math.max(0, round1(daysBetween(now, plannedEnd))) : 0;
   const workingDays = workingDaysFor(sprint);
 
@@ -463,11 +477,13 @@ function tallySprint(sprint: JiraSprint, issues: JiraIssue[], fieldId: string | 
       completeDate: sprint.completeDate || null,
     },
     points: {
-      committed,
-      completed,
-      remaining,
-      added,
-      startCommitted,
+      committed: round1(committed),
+      completed: round1(completed),
+      remaining: round1(remaining),
+      added: round1(added),
+      startCommitted: round1(startCommitted),
+      completedStart: round1(completedStart),
+      completedAdded: round1(completedAdded),
       startPct: 0,
       endPct,
     },
@@ -573,22 +589,49 @@ async function sprintIssues(sprintId: number, withChangelog = true): Promise<Jir
 
 const CARDS_AT_FULL_SPRINT = 40;
 
+function rewardPct(
+  doneStart: number,
+  startCommitted: number,
+  doneAdded: number,
+  addedCommitted: number,
+  fallbackPct: number,
+) {
+  if (startCommitted > 0) {
+    return {
+      startPct: doneStart / startCommitted,
+      addedPct: doneAdded / startCommitted,
+    };
+  }
+  if (addedCommitted > 0) {
+    return { startPct: 0, addedPct: doneAdded / addedCommitted };
+  }
+  return { startPct: fallbackPct, addedPct: 0 };
+}
+
 function suggestPacks(
-  percent: number,
+  startPct: number,
+  addedPct: number,
   beatPrevious: boolean,
   templates: Awaited<ReturnType<typeof listTemplates>>,
 ): { cards: number; packs: SuggestedPack[] } {
-  const cards = Math.max(0, Math.round(CARDS_AT_FULL_SPRINT * Math.max(0, percent)));
+  const safeStart = Math.max(0, startPct);
+  const safeAdded = Math.max(0, addedPct);
+  const cards = Math.max(0, Math.round(CARDS_AT_FULL_SPRINT * (safeStart + safeAdded)));
+  const startCards = Math.max(0, Math.round(CARDS_AT_FULL_SPRINT * safeStart));
+  const addedCards = Math.max(0, cards - startCards);
   const byKey = Object.fromEntries(templates.filter((pack) => pack.presetKey).map((pack) => [pack.presetKey, pack]));
   const standard = byKey.standard;
   const packs: SuggestedPack[] = [];
   if (standard && cards > 0) {
     const quantity = Math.max(1, Math.ceil(cards / standard.cardCount));
+    const reason = addedCards
+      ? `${Math.round(safeStart * 100)}% du début (${startCards}) + ${addedCards} des ajouts`
+      : `${Math.round(safeStart * 100)}% du début → ${cards} carte${cards > 1 ? 's' : ''}`;
     packs.push({
       templateId: standard.id,
       name: standard.name,
       quantity,
-      reason: `${Math.round(percent * 100)}% du début → ${cards} carte${cards > 1 ? 's' : ''}`,
+      reason,
     });
   }
   const epic = byKey.epique;
@@ -653,7 +696,7 @@ export async function sprintRewardGuide(sprintId: number) {
     previous && current.metrics.points.completed > previous.metrics.points.completed,
   );
   const teamStart = current.metrics.points.startCommitted;
-  const teamPct = teamStart > 0 ? current.metrics.points.completed / teamStart : 0;
+  const teamPct = teamStart > 0 ? current.metrics.points.completedStart / teamStart : 0;
 
   const contributors: SprintContributor[] = [...current.groups.values()]
     .filter((row) => row.jiraName !== 'Non assigné' || row.issuesDone > 0)
@@ -671,8 +714,14 @@ export async function sprintRewardGuide(sprintId: number) {
       const previousPerDay = prevRow && previousDays != null ? prevRow.storyPoints / Math.max(0.5, previousDays) : null;
       const deltaPoints = previousPoints == null ? null : round1(row.storyPoints - previousPoints);
       const deltaPerDay = previousPerDay == null ? null : round1(pointsPerDay - previousPerDay);
-      const personPct = row.storyPointsStart > 0 ? row.storyPoints / row.storyPointsStart : teamPct;
-      const suggestion = suggestPacks(personPct, beatPrevious, templates);
+      const { startPct, addedPct } = rewardPct(
+        row.storyPointsDoneStart,
+        row.storyPointsStart,
+        row.storyPointsDoneAdded,
+        row.storyPointsAdded,
+        teamPct,
+      );
+      const suggestion = suggestPacks(startPct, addedPct, beatPrevious, templates);
       return {
         personKey: row.key,
         jiraName: row.jiraName,
@@ -686,7 +735,9 @@ export async function sprintRewardGuide(sprintId: number) {
         storyPointsCommitted: row.storyPointsCommitted,
         storyPointsStart: round1(row.storyPointsStart),
         storyPointsAdded: round1(row.storyPointsAdded),
-        completionPct: pct(row.storyPoints, row.storyPointsStart || row.storyPointsCommitted),
+        storyPointsDoneStart: round1(row.storyPointsDoneStart),
+        storyPointsDoneAdded: round1(row.storyPointsDoneAdded),
+        completionPct: pct(row.storyPointsDoneStart, row.storyPointsStart || row.storyPointsCommitted),
         daysPresent: round1(daysPresent),
         daysDefault: round1(daysDefault),
         pointsPerDay: round1(pointsPerDay),
