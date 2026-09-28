@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc && mkdir -p dist/db/snapshot-art && cp src/db/snapshot-art/* dist/db/snapshot-art/",
+    "build": "tsc && mkdir -p dist/db/snapshot-art && cp src/db/*.sql dist/db/ && cp src/db/snapshot-art/* dist/db/snapshot-art/",
     "start": "node dist/index.js",
-    "db:init": "tsx src/db/init.ts",
-    "db:migrate": "tsx src/db/migrate.ts",
-    "db:seed": "tsx src/db/seed.ts",
+    "db:init": "node dist/db/init.js",
+    "db:migrate": "node dist/db/migrate.js",
+    "db:seed": "node dist/db/seed.js",
     "art:ffa": "tsx src/db/farFarAwayArt.ts"
   },
   "dependencies": {

@@ -2,11 +2,10 @@ import mysql, { type Connection } from 'mysql2/promise';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import dotenv from 'dotenv';
+import '../loadEnv.js';
 import { getDbConnectionOptions } from './dbConfig.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const MIGRATION_FILES = [
   'migrate-v2.sql',

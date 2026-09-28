@@ -13,6 +13,7 @@ import collectionRoutes from './routes/collectionRoutes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { getDbConnectionOptions } from './db/dbConfig.js';
 import { applyCurrentCatalogSnapshotOnce } from './db/applyCurrentCatalogSnapshot.js';
+import { applyPendingMigrations } from './db/migrate.js';
 import { ensureBoosterPresets, writeBoosterArtFiles } from './db/boosterPresets.js';
 import { migrateAdminEmail } from './db/seed.js';
 import pool from './db/connection.js';
@@ -82,6 +83,9 @@ app.listen(PORT, () => {
     const connection = await mysql.createConnection(getDbConnectionOptions());
     try {
       await connection.query('SELECT 1');
+      const dbName = process.env.DB_NAME || 'anacra_pack';
+      await connection.query(`USE \`${dbName}\`;`);
+      await applyPendingMigrations(connection);
       await migrateAdminEmail(pool);
       await applyCurrentCatalogSnapshotOnce();
       await ensureBoosterPresets();
