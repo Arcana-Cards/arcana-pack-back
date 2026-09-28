@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const candidates = [
+  '/app/runtime-env/.env',
   path.resolve(here, '../.env'),
   path.resolve(here, '../../.env'),
 ];
