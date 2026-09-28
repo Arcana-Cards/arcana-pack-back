@@ -74,6 +74,7 @@ export function mapUser(row: RowDataPacket): UserDto {
     lastLogin: row.last_login ? new Date(row.last_login as string).toISOString() : null,
     unopenedBoosters: row.unopened_boosters != null ? Number(row.unopened_boosters) : undefined,
     collectedCopies: row.collected_copies != null ? Number(row.collected_copies) : undefined,
+    sprintDays: row.sprint_days != null ? Number(row.sprint_days) : null,
   };
 }
 

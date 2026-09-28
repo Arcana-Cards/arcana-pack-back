@@ -19,6 +19,7 @@ const MIGRATION_FILES = [
   'migrate-v9.sql',
   'migrate-v10.sql',
   'migrate-v11.sql',
+  'migrate-v12.sql',
 ] as const;
 
 export async function applyPendingMigrations(connection: Connection): Promise<void> {
@@ -39,6 +40,7 @@ export async function applyPendingMigrations(connection: Connection): Promise<vo
           && err.code !== 'ER_CANT_DROP_FIELD_OR_KEY'
           && err.code !== 'ER_BAD_FIELD_ERROR'
           && err.code !== 'ER_DUP_KEYNAME'
+          && err.code !== 'ER_TABLE_EXISTS_ERROR'
         ) {
           throw e;
         }

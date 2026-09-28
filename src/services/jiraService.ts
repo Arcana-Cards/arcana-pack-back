@@ -1,4 +1,6 @@
+import type { RowDataPacket } from 'mysql2';
 import { AppError } from '../middleware/errorHandler.js';
+import pool from '../db/connection.js';
 import { listUsers } from './authService.js';
 import { listTemplates } from './boosterService.js';
 
@@ -41,6 +43,7 @@ export type JiraSprint = {
   endDate?: string | null;
   completeDate?: string | null;
   boardId?: number;
+  originBoardId?: number;
 };
 
 export type SuggestedPack = {
@@ -51,6 +54,7 @@ export type SuggestedPack = {
 };
 
 export type SprintContributor = {
+  personKey: string;
   jiraName: string;
   jiraEmail: string | null;
   userId: number | null;
@@ -61,6 +65,15 @@ export type SprintContributor = {
   storyPoints: number;
   storyPointsCommitted: number;
   completionPct: number;
+  daysPresent: number;
+  daysDefault: number;
+  pointsPerDay: number;
+  previousPoints: number | null;
+  previousDays: number | null;
+  previousPerDay: number | null;
+  deltaPoints: number | null;
+  deltaPerDay: number | null;
+  compareBonus: number;
   suggestedCards: number;
   suggestedPacks: SuggestedPack[];
 };
@@ -96,9 +109,19 @@ export type SprintMetrics = {
   time: {
     elapsedPct: number;
     daysTotal: number;
+    workingDays: number;
     daysLeft: number;
     ahead: boolean | null;
   };
+};
+
+export type SprintComparison = {
+  previous: SprintMetrics['sprint'];
+  points: { current: number; previous: number; delta: number };
+  committed: { current: number; previous: number; delta: number };
+  endPct: { current: number; previous: number; delta: number };
+  issuesDone: { current: number; previous: number; delta: number };
+  pointsPerDay: { current: number; previous: number; delta: number };
 };
 
 function jiraConfig() {
@@ -157,6 +180,33 @@ async function jiraGet<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+type JiraPage<T> = {
+  values?: T[];
+  isLast?: boolean;
+  maxResults?: number;
+  total?: number;
+};
+
+async function jiraAgileValues<T>(path: string): Promise<T[]> {
+  const items: T[] = [];
+  let startAt = 0;
+  const joiner = path.includes('?') ? '&' : '?';
+  for (;;) {
+    const json = await jiraGet<JiraPage<T>>(`${path}${joiner}startAt=${startAt}&maxResults=50`);
+    const page = json.values ?? [];
+    items.push(...page);
+    startAt += json.maxResults || 50;
+    if (json.isLast || !page.length) break;
+    if (json.total != null && startAt >= json.total) break;
+  }
+  return items;
+}
+
+function sprintNumber(name: string | undefined): number {
+  const match = String(name || '').match(/(\d+)\s*$/);
+  return match ? Number(match[1]) : 0;
+}
+
 let storyPointsField: string | null | undefined;
 
 async function storyPointsFieldId(): Promise<string | null> {
@@ -176,10 +226,8 @@ function issuePoints(issue: JiraIssue, fieldId: string | null): number {
 }
 
 export async function listJiraBoards(): Promise<Array<{ id: number; name: string; type: string }>> {
-  const json = await jiraGet<{ values?: Array<{ id: number; name: string; type: string }> }>(
-    '/rest/agile/1.0/board?maxResults=50',
-  );
-  return (json.values ?? []).map((board) => ({
+  const boards = await jiraAgileValues<{ id: number; name: string; type: string }>('/rest/agile/1.0/board');
+  return boards.map((board) => ({
     id: board.id,
     name: board.name,
     type: board.type,
@@ -197,11 +245,11 @@ export async function listJiraSprints(boardId?: number): Promise<JiraSprint[]> {
     return 0;
   });
   const sprints: JiraSprint[] = [];
-  for (const board of ordered.slice(0, 8)) {
-    const json = await jiraGet<{ values?: JiraSprint[] }>(
-      `/rest/agile/1.0/board/${board.id}/sprint?state=active,closed&maxResults=20`,
+  for (const board of ordered) {
+    const page = await jiraAgileValues<JiraSprint>(
+      `/rest/agile/1.0/board/${board.id}/sprint?state=active,closed`,
     );
-    for (const sprint of json.values ?? []) {
+    for (const sprint of page) {
       sprints.push({ ...sprint, boardId: board.id });
     }
   }
@@ -216,7 +264,9 @@ export async function listJiraSprints(boardId?: number): Promise<JiraSprint[]> {
       const ae = a.state === 'active' ? 0 : 1;
       const be = b.state === 'active' ? 0 : 1;
       if (ae !== be) return ae - be;
-      return String(b.endDate || b.completeDate || '').localeCompare(String(a.endDate || a.completeDate || ''));
+      const byDate = String(b.endDate || b.completeDate || '').localeCompare(String(a.endDate || a.completeDate || ''));
+      if (byDate) return byDate;
+      return sprintNumber(b.name) - sprintNumber(a.name);
     });
 }
 
@@ -252,119 +302,47 @@ function daysBetween(from: Date, to: Date): number {
   return (to.getTime() - from.getTime()) / 86_400_000;
 }
 
-function joinedSprintAt(issue: JiraIssue, sprint: JiraSprint): Date | null {
-  const histories = issue.changelog?.histories ?? [];
-  for (const history of histories) {
-    for (const item of history.items ?? []) {
-      if ((item.field || '').toLowerCase() !== 'sprint') continue;
-      const to = `${item.to || ''} ${item.toString || ''}`;
-      const from = `${item.from || ''} ${item.fromString || ''}`;
-      const nowIn = to.includes(String(sprint.id)) || (sprint.name ? to.includes(sprint.name) : false);
-      const wasIn = from.includes(String(sprint.id)) || (sprint.name ? from.includes(sprint.name) : false);
-      if (nowIn && !wasIn && history.created) return new Date(history.created);
-    }
-  }
-  return issue.fields?.created ? new Date(issue.fields.created) : null;
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
 }
 
-function wasAddedMidSprint(issue: JiraIssue, sprint: JiraSprint): boolean {
-  if (!sprint.startDate) return false;
-  const start = new Date(sprint.startDate);
-  const joined = joinedSprintAt(issue, sprint);
-  if (joined) return joined.getTime() > start.getTime() + 3_600_000;
-  const created = issue.fields?.created ? new Date(issue.fields.created) : null;
-  return Boolean(created && created.getTime() > start.getTime());
+function weekdaysInclusive(start: Date, end: Date): number {
+  const cursor = new Date(start);
+  cursor.setHours(0, 0, 0, 0);
+  const last = new Date(end);
+  last.setHours(0, 0, 0, 0);
+  if (last < cursor) return 1;
+  let days = 0;
+  while (cursor <= last) {
+    const weekday = cursor.getDay();
+    if (weekday !== 0 && weekday !== 6) days += 1;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return Math.max(1, days);
 }
 
-async function sprintIssues(sprintId: number): Promise<JiraIssue[]> {
-  const fieldId = await storyPointsFieldId();
-  const fields = ['summary', 'status', 'assignee', 'issuetype', 'priority', 'created', 'resolutiondate', fieldId]
-    .filter(Boolean)
-    .join(',');
-  const issues: JiraIssue[] = [];
-  let startAt = 0;
-  for (let i = 0; i < 20; i += 1) {
-    const json = await jiraGet<{ issues?: JiraIssue[]; startAt: number; maxResults: number; total: number }>(
-      `/rest/agile/1.0/sprint/${sprintId}/issue?startAt=${startAt}&maxResults=50&expand=changelog&fields=${encodeURIComponent(fields)}`,
-    );
-    issues.push(...(json.issues ?? []));
-    startAt += json.maxResults || 50;
-    if (!json.issues?.length || startAt >= (json.total || 0)) break;
-  }
-  return issues;
+function workingDaysFor(sprint: JiraSprint): number {
+  if (!sprint.startDate || !sprint.endDate) return 5;
+  return weekdaysInclusive(new Date(sprint.startDate), new Date(sprint.endDate));
 }
 
-function suggestPacks(points: number, issuesDone: number, templates: Awaited<ReturnType<typeof listTemplates>>): {
-  cards: number;
-  packs: SuggestedPack[];
-} {
-  const cards = points > 0 ? Math.round(points) : issuesDone;
-  const byKey = Object.fromEntries(templates.filter((pack) => pack.presetKey).map((pack) => [pack.presetKey, pack]));
-  const standard = byKey.standard;
-  const packs: SuggestedPack[] = [];
-  if (standard && cards > 0) {
-    const quantity = Math.max(1, Math.ceil(cards / standard.cardCount));
-    packs.push({
-      templateId: standard.id,
-      name: standard.name,
-      quantity,
-      reason: `${cards} carte${cards > 1 ? 's' : ''} → ${quantity}×${standard.cardCount}`,
-    });
-  }
-  const bonuses: Array<{ key: string; min: number; label: string }> = [
-    { key: 'rare', min: 8, label: '≥ 8 pts' },
-    { key: 'premium', min: 13, label: '≥ 13 pts' },
-    { key: 'epique', min: 21, label: '≥ 21 pts' },
-  ];
-  for (const bonus of bonuses) {
-    const pack = byKey[bonus.key];
-    if (pack && points >= bonus.min) {
-      packs.push({
-        templateId: pack.id,
-        name: pack.name,
-        quantity: 1,
-        reason: bonus.label,
-      });
-    }
-  }
-  return { cards, packs };
+function personKey(email: string | null | undefined, name: string): string {
+  return (email || name).trim().toLowerCase();
 }
 
-function matchUser(
-  assignee: JiraUser | null | undefined,
-  users: Awaited<ReturnType<typeof listUsers>>,
-) {
-  if (!assignee) return null;
-  const email = assignee.emailAddress?.trim().toLowerCase();
-  if (email) {
-    const byEmail = users.find((user) => user.email.toLowerCase() === email);
-    if (byEmail) return byEmail;
-  }
-  const name = (assignee.displayName || '').trim().toLowerCase();
-  if (!name) return null;
-  return users.find((user) => user.username.toLowerCase() === name
-    || user.username.toLowerCase().includes(name)
-    || name.includes(user.username.toLowerCase())) ?? null;
-}
+type SprintGroup = {
+  key: string;
+  jiraName: string;
+  jiraEmail: string | null;
+  issuesDone: number;
+  issuesInProgress: number;
+  issuesTotal: number;
+  storyPoints: number;
+  storyPointsCommitted: number;
+};
 
-export async function sprintRewardGuide(sprintId: number) {
-  const [sprint, issues, users, templates] = await Promise.all([
-    getJiraSprint(sprintId),
-    sprintIssues(sprintId),
-    listUsers(),
-    listTemplates(),
-  ]);
-  const fieldId = await storyPointsFieldId();
-  const groups = new Map<string, {
-    jiraName: string;
-    jiraEmail: string | null;
-    issuesDone: number;
-    issuesInProgress: number;
-    issuesTotal: number;
-    storyPoints: number;
-    storyPointsCommitted: number;
-  }>();
-
+function tallySprint(sprint: JiraSprint, issues: JiraIssue[], fieldId: string | null) {
+  const groups = new Map<string, SprintGroup>();
   let committed = 0;
   let completed = 0;
   let remaining = 0;
@@ -396,8 +374,9 @@ export async function sprintRewardGuide(sprintId: number) {
     if (!points) unestimated += 1;
     if (!assignee) unassigned += 1;
 
-    const key = assignee?.accountId || assignee?.emailAddress || assignee?.displayName || 'unassigned';
+    const key = personKey(assignee?.emailAddress, assignee?.displayName || assignee?.accountId || 'unassigned');
     const current = groups.get(key) ?? {
+      key,
       jiraName: assignee?.displayName || 'Non assigné',
       jiraEmail: assignee?.emailAddress || null,
       issuesDone: 0,
@@ -417,40 +396,6 @@ export async function sprintRewardGuide(sprintId: number) {
     groups.set(key, current);
   }
 
-  const contributors: SprintContributor[] = [...groups.values()]
-    .filter((row) => row.jiraName !== 'Non assigné' || row.issuesDone > 0)
-    .map((row) => {
-      const user = matchUser({ displayName: row.jiraName, emailAddress: row.jiraEmail || undefined }, users);
-      const suggestion = suggestPacks(row.storyPoints, row.issuesDone, templates);
-      return {
-        jiraName: row.jiraName,
-        jiraEmail: row.jiraEmail,
-        userId: user?.id ?? null,
-        username: user?.username ?? null,
-        issuesDone: row.issuesDone,
-        issuesInProgress: row.issuesInProgress,
-        issuesTotal: row.issuesTotal,
-        storyPoints: row.storyPoints,
-        storyPointsCommitted: row.storyPointsCommitted,
-        completionPct: pct(row.storyPoints, row.storyPointsCommitted),
-        suggestedCards: suggestion.cards,
-        suggestedPacks: suggestion.packs,
-      };
-    })
-    .sort((a, b) => b.storyPoints - a.storyPoints || b.issuesDone - a.issuesDone);
-
-  const totals = contributors.reduce(
-    (acc, row) => {
-      acc.storyPoints += row.storyPoints;
-      acc.issuesDone += row.issuesDone;
-      acc.suggestedCards += row.suggestedCards;
-      acc.suggestedBoosters += row.suggestedPacks.reduce((sum, pack) => sum + pack.quantity, 0);
-      acc.matched += row.userId ? 1 : 0;
-      return acc;
-    },
-    { storyPoints: 0, issuesDone: 0, suggestedCards: 0, suggestedBoosters: 0, matched: 0 },
-  );
-
   const start = sprint.startDate ? new Date(sprint.startDate) : null;
   const plannedEnd = sprint.endDate ? new Date(sprint.endDate) : null;
   const now = sprint.completeDate ? new Date(sprint.completeDate) : new Date();
@@ -458,7 +403,8 @@ export async function sprintRewardGuide(sprintId: number) {
   const elapsedRaw = start && daysTotal ? daysBetween(start, now) / daysTotal : (sprint.state === 'closed' ? 1 : 0);
   const elapsedPct = Math.max(0, Math.min(100, Math.round(elapsedRaw * 100)));
   const endPct = pct(completed, committed);
-  const daysLeft = plannedEnd ? Math.max(0, Math.round(daysBetween(now, plannedEnd) * 10) / 10) : 0;
+  const daysLeft = plannedEnd ? Math.max(0, round1(daysBetween(now, plannedEnd))) : 0;
+  const workingDays = workingDaysFor(sprint);
 
   const metrics: SprintMetrics = {
     sprint: {
@@ -490,16 +436,269 @@ export async function sprintRewardGuide(sprintId: number) {
     },
     time: {
       elapsedPct,
-      daysTotal: Math.round(daysTotal * 10) / 10,
+      daysTotal: round1(daysTotal),
+      workingDays,
       daysLeft: sprint.state === 'closed' ? 0 : daysLeft,
       ahead: committed > 0 ? endPct >= elapsedPct : null,
     },
   };
 
+  return { groups, metrics };
+}
+
+async function loadAttendance(sprintId: number): Promise<Map<string, number>> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    'SELECT person_key, days FROM sprint_attendance WHERE jira_sprint_id = ?',
+    [sprintId],
+  );
+  return new Map(rows.map((row) => [String(row.person_key).toLowerCase(), Number(row.days)]));
+}
+
+export async function saveSprintAttendance(sprintId: number, days: Record<string, unknown>) {
+  for (const [key, raw] of Object.entries(days)) {
+    const person = key.trim().toLowerCase();
+    const value = Number(raw);
+    if (!person || !Number.isFinite(value) || value < 0 || value > 31) continue;
+    await pool.execute(
+      `INSERT INTO sprint_attendance (jira_sprint_id, person_key, days)
+       VALUES (?,?,?)
+       ON DUPLICATE KEY UPDATE days = VALUES(days)`,
+      [sprintId, person, round1(value)],
+    );
+  }
+}
+
+async function previousSprintOnBoard(sprint: JiraSprint): Promise<JiraSprint | null> {
+  const boardId = sprint.originBoardId || sprint.boardId;
+  const all = await listJiraSprints(boardId);
+  const index = all.findIndex((item) => item.id === sprint.id);
+  if (index >= 0) return all[index + 1] ?? null;
+  const start = sprint.startDate || sprint.endDate || '';
+  return all.find((item) => String(item.endDate || item.startDate || '') < start) ?? null;
+}
+
+function joinedSprintAt(issue: JiraIssue, sprint: JiraSprint): Date | null {
+  const histories = issue.changelog?.histories ?? [];
+  for (const history of histories) {
+    for (const item of history.items ?? []) {
+      if ((item.field || '').toLowerCase() !== 'sprint') continue;
+      const to = `${item.to || ''} ${item.toString || ''}`;
+      const from = `${item.from || ''} ${item.fromString || ''}`;
+      const nowIn = to.includes(String(sprint.id)) || (sprint.name ? to.includes(sprint.name) : false);
+      const wasIn = from.includes(String(sprint.id)) || (sprint.name ? from.includes(sprint.name) : false);
+      if (nowIn && !wasIn && history.created) return new Date(history.created);
+    }
+  }
+  return issue.fields?.created ? new Date(issue.fields.created) : null;
+}
+
+function wasAddedMidSprint(issue: JiraIssue, sprint: JiraSprint): boolean {
+  if (!sprint.startDate) return false;
+  const start = new Date(sprint.startDate);
+  const joined = joinedSprintAt(issue, sprint);
+  if (joined) return joined.getTime() > start.getTime() + 3_600_000;
+  const created = issue.fields?.created ? new Date(issue.fields.created) : null;
+  return Boolean(created && created.getTime() > start.getTime());
+}
+
+async function sprintIssues(sprintId: number, withChangelog = true): Promise<JiraIssue[]> {
+  const fieldId = await storyPointsFieldId();
+  const fields = ['summary', 'status', 'assignee', 'issuetype', 'priority', 'created', 'resolutiondate', fieldId]
+    .filter(Boolean)
+    .join(',');
+  const expand = withChangelog ? '&expand=changelog' : '';
+  const issues: JiraIssue[] = [];
+  let startAt = 0;
+  for (let i = 0; i < 20; i += 1) {
+    const json = await jiraGet<{ issues?: JiraIssue[]; startAt: number; maxResults: number; total: number }>(
+      `/rest/agile/1.0/sprint/${sprintId}/issue?startAt=${startAt}&maxResults=50${expand}&fields=${encodeURIComponent(fields)}`,
+    );
+    issues.push(...(json.issues ?? []));
+    startAt += json.maxResults || 50;
+    if (!json.issues?.length || startAt >= (json.total || 0)) break;
+  }
+  return issues;
+}
+
+function suggestPacks(points: number, issuesDone: number, templates: Awaited<ReturnType<typeof listTemplates>>): {
+  cards: number;
+  packs: SuggestedPack[];
+} {
+  const cards = points > 0 ? Math.max(0, Math.round(points)) : issuesDone;
+  const byKey = Object.fromEntries(templates.filter((pack) => pack.presetKey).map((pack) => [pack.presetKey, pack]));
+  const standard = byKey.standard;
+  const packs: SuggestedPack[] = [];
+  if (standard && cards > 0) {
+    const quantity = Math.max(1, Math.ceil(cards / standard.cardCount));
+    packs.push({
+      templateId: standard.id,
+      name: standard.name,
+      quantity,
+      reason: `${cards} carte${cards > 1 ? 's' : ''} → ${quantity}×${standard.cardCount}`,
+    });
+  }
+  const bonuses: Array<{ key: string; min: number; label: string }> = [
+    { key: 'rare', min: 8, label: '≥ 8 pts' },
+    { key: 'premium', min: 13, label: '≥ 13 pts' },
+    { key: 'epique', min: 21, label: '≥ 21 pts' },
+  ];
+  for (const bonus of bonuses) {
+    const pack = byKey[bonus.key];
+    if (pack && cards >= bonus.min) {
+      packs.push({
+        templateId: pack.id,
+        name: pack.name,
+        quantity: 1,
+        reason: bonus.label,
+      });
+    }
+  }
+  return { cards, packs };
+}
+
+function matchUser(
+  assignee: JiraUser | null | undefined,
+  users: Awaited<ReturnType<typeof listUsers>>,
+) {
+  if (!assignee) return null;
+  const email = assignee.emailAddress?.trim().toLowerCase();
+  if (email) {
+    const byEmail = users.find((user) => user.email.toLowerCase() === email);
+    if (byEmail) return byEmail;
+  }
+  const name = (assignee.displayName || '').trim().toLowerCase();
+  if (!name) return null;
+  return users.find((user) => user.username.toLowerCase() === name
+    || user.username.toLowerCase().includes(name)
+    || name.includes(user.username.toLowerCase())) ?? null;
+}
+
+export async function sprintRewardGuide(sprintId: number) {
+  const [sprint, issues, users, templates, attendance] = await Promise.all([
+    getJiraSprint(sprintId),
+    sprintIssues(sprintId),
+    listUsers(),
+    listTemplates(),
+    loadAttendance(sprintId),
+  ]);
+  const fieldId = await storyPointsFieldId();
+  const current = tallySprint(sprint, issues, fieldId);
+  const workingDays = current.metrics.time.workingDays;
+
+  let previous: ReturnType<typeof tallySprint> | null = null;
+  let previousAttendance = new Map<string, number>();
+  const older = await previousSprintOnBoard(sprint);
+  if (older) {
+    const [prevIssues, prevDays] = await Promise.all([
+      sprintIssues(older.id, false),
+      loadAttendance(older.id),
+    ]);
+    previous = tallySprint(older, prevIssues, fieldId);
+    previousAttendance = prevDays;
+  }
+
+  const prevByKey = new Map<string, SprintGroup>();
+  if (previous) {
+    for (const row of previous.groups.values()) prevByKey.set(row.key, row);
+  }
+
+  const contributors: SprintContributor[] = [...current.groups.values()]
+    .filter((row) => row.jiraName !== 'Non assigné' || row.issuesDone > 0)
+    .map((row) => {
+      const user = matchUser({ displayName: row.jiraName, emailAddress: row.jiraEmail || undefined }, users);
+      const daysDefault = user?.sprintDays ?? workingDays;
+      const daysPresent = attendance.get(row.key) ?? daysDefault;
+      const safeDays = Math.max(0.5, daysPresent);
+      const pointsPerDay = row.storyPoints / safeDays;
+      const prevRow = prevByKey.get(row.key) ?? null;
+      const previousDays = prevRow
+        ? previousAttendance.get(row.key) ?? user?.sprintDays ?? previous?.metrics.time.workingDays ?? workingDays
+        : null;
+      const previousPoints = prevRow ? prevRow.storyPoints : null;
+      const previousPerDay = prevRow && previousDays != null ? prevRow.storyPoints / Math.max(0.5, previousDays) : null;
+      const deltaPoints = previousPoints == null ? null : round1(row.storyPoints - previousPoints);
+      const deltaPerDay = previousPerDay == null ? null : round1(pointsPerDay - previousPerDay);
+      const compareBonus = previousPerDay == null ? 0 : Math.max(0, Math.round((pointsPerDay - previousPerDay) * safeDays));
+      const suggestion = suggestPacks(row.storyPoints + compareBonus, row.issuesDone, templates);
+      return {
+        personKey: row.key,
+        jiraName: row.jiraName,
+        jiraEmail: row.jiraEmail,
+        userId: user?.id ?? null,
+        username: user?.username ?? null,
+        issuesDone: row.issuesDone,
+        issuesInProgress: row.issuesInProgress,
+        issuesTotal: row.issuesTotal,
+        storyPoints: row.storyPoints,
+        storyPointsCommitted: row.storyPointsCommitted,
+        completionPct: pct(row.storyPoints, row.storyPointsCommitted),
+        daysPresent: round1(daysPresent),
+        daysDefault: round1(daysDefault),
+        pointsPerDay: round1(pointsPerDay),
+        previousPoints,
+        previousDays: previousDays == null ? null : round1(previousDays),
+        previousPerDay: previousPerDay == null ? null : round1(previousPerDay),
+        deltaPoints,
+        deltaPerDay,
+        compareBonus,
+        suggestedCards: suggestion.cards,
+        suggestedPacks: suggestion.packs,
+      };
+    })
+    .sort((a, b) => b.suggestedCards - a.suggestedCards || b.storyPoints - a.storyPoints || b.issuesDone - a.issuesDone);
+
+  const totals = contributors.reduce(
+    (acc, row) => {
+      acc.storyPoints += row.storyPoints;
+      acc.issuesDone += row.issuesDone;
+      acc.suggestedCards += row.suggestedCards;
+      acc.suggestedBoosters += row.suggestedPacks.reduce((sum, pack) => sum + pack.quantity, 0);
+      acc.matched += row.userId ? 1 : 0;
+      return acc;
+    },
+    { storyPoints: 0, issuesDone: 0, suggestedCards: 0, suggestedBoosters: 0, matched: 0 },
+  );
+
+  const currentPerDay = workingDays > 0 ? current.metrics.points.completed / workingDays : 0;
+  const previousPerDay = previous && previous.metrics.time.workingDays > 0
+    ? previous.metrics.points.completed / previous.metrics.time.workingDays
+    : 0;
+  const comparison: SprintComparison | null = previous
+    ? {
+      previous: previous.metrics.sprint,
+      points: {
+        current: current.metrics.points.completed,
+        previous: previous.metrics.points.completed,
+        delta: round1(current.metrics.points.completed - previous.metrics.points.completed),
+      },
+      committed: {
+        current: current.metrics.points.committed,
+        previous: previous.metrics.points.committed,
+        delta: round1(current.metrics.points.committed - previous.metrics.points.committed),
+      },
+      endPct: {
+        current: current.metrics.points.endPct,
+        previous: previous.metrics.points.endPct,
+        delta: current.metrics.points.endPct - previous.metrics.points.endPct,
+      },
+      issuesDone: {
+        current: current.metrics.issues.done,
+        previous: previous.metrics.issues.done,
+        delta: current.metrics.issues.done - previous.metrics.issues.done,
+      },
+      pointsPerDay: {
+        current: round1(currentPerDay),
+        previous: round1(previousPerDay),
+        delta: round1(currentPerDay - previousPerDay),
+      },
+    }
+    : null;
+
   return {
     storyPointsField: fieldId,
     totals,
-    metrics,
+    metrics: current.metrics,
+    comparison,
     contributors,
   };
 }

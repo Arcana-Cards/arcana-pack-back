@@ -83,6 +83,7 @@ export interface UserDto {
   lastLogin: string | null;
   unopenedBoosters?: number;
   collectedCopies?: number;
+  sprintDays?: number | null;
 }
 
 export interface UniverseDto {

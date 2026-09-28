@@ -114,3 +114,13 @@ export async function listUsers(): Promise<UserDto[]> {
   );
   return rows.map(mapUser);
 }
+
+export async function updateUserSprintDays(userId: number, days: number | null): Promise<UserDto> {
+  if (days != null && (!Number.isFinite(days) || days < 0 || days > 31)) {
+    throw new AppError('Nombre de jours invalide', 400);
+  }
+  const [rows] = await pool.execute<RowDataPacket[]>('SELECT id FROM users WHERE id = ?', [userId]);
+  if (!rows.length) throw new AppError('Utilisateur introuvable', 404);
+  await pool.execute('UPDATE users SET sprint_days = ? WHERE id = ?', [days, userId]);
+  return getProfile(userId);
+}

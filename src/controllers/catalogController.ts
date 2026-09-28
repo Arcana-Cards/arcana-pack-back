@@ -5,8 +5,8 @@ import { listCards, getCard, createCard, createCards, updateCard, deleteCard, no
 import { aiStatus, draftFromGif, draftsFromTheme, searchGiphyGifs, type AiProgressEvent } from '../services/aiCardService.js';
 import { createEdition, createUniverse, deleteEdition, deleteUniverse, listEditions, listUniverses, updateEdition, updateUniverse } from '../services/catalogService.js';
 import { createTemplate, deleteTemplate, grantBoosters, grantBoostersBatch, listTemplates, updateTemplate } from '../services/boosterService.js';
-import { listUsers } from '../services/authService.js';
-import { jiraConfigured, jiraStatusDetailed, listJiraBoards, listJiraSprints, sprintRewardGuide } from '../services/jiraService.js';
+import { listUsers, updateUserSprintDays } from '../services/authService.js';
+import { jiraConfigured, jiraStatusDetailed, listJiraBoards, listJiraSprints, saveSprintAttendance, sprintRewardGuide } from '../services/jiraService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import type { Rarity } from '../types/index.js';
 
@@ -266,6 +266,19 @@ export async function getAdminUsers(_req: Request, res: Response, next: NextFunc
   }
 }
 
+export async function patchAdminUser(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const userId = Number(req.params.id);
+    if (!Number.isInteger(userId) || userId < 1) throw new AppError('Utilisateur invalide', 400);
+    const raw = req.body?.sprintDays;
+    const days = raw === null || raw === '' || raw === undefined ? null : Number(raw);
+    const data = await updateUserSprintDays(userId, days);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function postArt(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     if (!req.file) throw new AppError('Fichier image ou gif requis', 400);
@@ -363,6 +376,19 @@ export async function getJiraSprintRewards(req: Request, res: Response, next: Ne
     const sprintId = Number(req.params.sprintId);
     if (!Number.isInteger(sprintId) || sprintId < 1) throw new AppError('Sprint invalide', 400);
     res.json({ success: true, data: await sprintRewardGuide(sprintId) });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function putJiraSprintAttendance(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!jiraConfigured()) throw new AppError('Jira n’est pas configuré', 503);
+    const sprintId = Number(req.params.sprintId);
+    if (!Number.isInteger(sprintId) || sprintId < 1) throw new AppError('Sprint invalide', 400);
+    const days = req.body?.days && typeof req.body.days === 'object' ? req.body.days as Record<string, unknown> : {};
+    await saveSprintAttendance(sprintId, days);
+    res.json({ success: true, data: { saved: true } });
   } catch (error) {
     next(error);
   }
