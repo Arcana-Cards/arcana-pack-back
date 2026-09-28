@@ -364,7 +364,8 @@ export async function getJiraSprints(req: Request, res: Response, next: NextFunc
   try {
     if (!jiraConfigured()) throw new AppError('Jira n’est pas configuré', 503);
     const boardId = req.query.boardId ? Number(req.query.boardId) : undefined;
-    res.json({ success: true, data: await listJiraSprints(boardId) });
+    const newest = req.query.newest ? Number(req.query.newest) : undefined;
+    res.json({ success: true, data: await listJiraSprints(boardId, Number.isFinite(newest) ? newest : undefined) });
   } catch (error) {
     next(error);
   }

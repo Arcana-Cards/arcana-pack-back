@@ -225,34 +225,7 @@ function issuePoints(issue: JiraIssue, fieldId: string | null): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-export async function listJiraBoards(): Promise<Array<{ id: number; name: string; type: string }>> {
-  const boards = await jiraAgileValues<{ id: number; name: string; type: string }>('/rest/agile/1.0/board');
-  return boards.map((board) => ({
-    id: board.id,
-    name: board.name,
-    type: board.type,
-  }));
-}
-
-export async function listJiraSprints(boardId?: number): Promise<JiraSprint[]> {
-  const boards = boardId
-    ? [{ id: boardId, name: '', type: '' }]
-    : await listJiraBoards();
-  const preferred = process.env.JIRA_BOARD_ID ? Number(process.env.JIRA_BOARD_ID) : NaN;
-  const ordered = [...boards].sort((a, b) => {
-    if (a.id === preferred) return -1;
-    if (b.id === preferred) return 1;
-    return 0;
-  });
-  const sprints: JiraSprint[] = [];
-  for (const board of ordered) {
-    const page = await jiraAgileValues<JiraSprint>(
-      `/rest/agile/1.0/board/${board.id}/sprint?state=active,closed`,
-    );
-    for (const sprint of page) {
-      sprints.push({ ...sprint, boardId: board.id });
-    }
-  }
+function sortSprints(sprints: JiraSprint[]): JiraSprint[] {
   const seen = new Set<number>();
   return sprints
     .filter((sprint) => {
@@ -270,13 +243,75 @@ export async function listJiraSprints(boardId?: number): Promise<JiraSprint[]> {
     });
 }
 
+async function listBoardSprintPage(boardId: number, startAt: number) {
+  return jiraGet<JiraPage<JiraSprint>>(
+    `/rest/agile/1.0/board/${boardId}/sprint?state=active,closed&startAt=${startAt}&maxResults=50`,
+  );
+}
+
+async function newestSprintsOnBoard(boardId: number): Promise<JiraSprint[]> {
+  const first = await listBoardSprintPage(boardId, 0);
+  const page = first.values ?? [];
+  const total = first.total ?? page.length;
+  let values = page;
+  if (!first.isLast && total > page.length) {
+    const last = await listBoardSprintPage(boardId, Math.max(0, total - 50));
+    values = last.values ?? page;
+  }
+  return sortSprints(values.map((sprint) => ({ ...sprint, boardId })));
+}
+
+export async function listJiraBoards(): Promise<Array<{ id: number; name: string; type: string }>> {
+  const boards = await jiraAgileValues<{ id: number; name: string; type: string }>('/rest/agile/1.0/board');
+  return boards.map((board) => ({
+    id: board.id,
+    name: board.name,
+    type: board.type,
+  }));
+}
+
+export async function listJiraSprints(boardId?: number, newest?: number): Promise<JiraSprint[]> {
+  const boards = boardId
+    ? [{ id: boardId, name: '', type: '' }]
+    : await listJiraBoards();
+  const preferred = process.env.JIRA_BOARD_ID ? Number(process.env.JIRA_BOARD_ID) : NaN;
+  const ordered = [...boards].sort((a, b) => {
+    if (a.id === preferred) return -1;
+    if (b.id === preferred) return 1;
+    return 0;
+  });
+  if (newest && newest > 0) {
+    const recent: JiraSprint[] = [];
+    for (const board of ordered) {
+      recent.push(...await newestSprintsOnBoard(board.id));
+    }
+    return sortSprints(recent).slice(0, newest);
+  }
+  const sprints: JiraSprint[] = [];
+  for (const board of ordered) {
+    const page = await jiraAgileValues<JiraSprint>(
+      `/rest/agile/1.0/board/${board.id}/sprint?state=active,closed`,
+    );
+    for (const sprint of page) {
+      sprints.push({ ...sprint, boardId: board.id });
+    }
+  }
+  return sortSprints(sprints);
+}
+
 async function getJiraSprint(sprintId: number): Promise<JiraSprint> {
   return jiraGet<JiraSprint>(`/rest/agile/1.0/sprint/${sprintId}`);
 }
 
 function statusBucket(issue: JiraIssue): 'done' | 'progress' | 'todo' {
   const key = (issue.fields?.status?.statusCategory?.key || '').toLowerCase();
-  if (key === 'done') return 'done';
+  const name = (issue.fields?.status?.name || '').toLowerCase();
+  if (
+    key === 'done'
+    || /deployed|accepted|accepté|accepte|déployé|deploye/.test(name)
+  ) {
+    return 'done';
+  }
   if (key === 'indeterminate') return 'progress';
   return 'todo';
 }
@@ -470,9 +505,12 @@ export async function saveSprintAttendance(sprintId: number, days: Record<string
 
 async function previousSprintOnBoard(sprint: JiraSprint): Promise<JiraSprint | null> {
   const boardId = sprint.originBoardId || sprint.boardId;
+  const recent = boardId ? await newestSprintsOnBoard(boardId) : await listJiraSprints(undefined, 10);
+  const index = recent.findIndex((item) => item.id === sprint.id);
+  if (index >= 0) return recent[index + 1] ?? null;
   const all = await listJiraSprints(boardId);
-  const index = all.findIndex((item) => item.id === sprint.id);
-  if (index >= 0) return all[index + 1] ?? null;
+  const fallback = all.findIndex((item) => item.id === sprint.id);
+  if (fallback >= 0) return all[fallback + 1] ?? null;
   const start = sprint.startDate || sprint.endDate || '';
   return all.find((item) => String(item.endDate || item.startDate || '') < start) ?? null;
 }
