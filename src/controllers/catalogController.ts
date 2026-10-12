@@ -6,6 +6,7 @@ import { aiStatus, draftFromGif, draftsFromTheme, searchGiphyGifs, type AiProgre
 import { createEdition, createUniverse, deleteEdition, deleteUniverse, listEditions, listUniverses, updateEdition, updateUniverse } from '../services/catalogService.js';
 import { createTemplate, deleteTemplate, grantBoosters, grantBoostersBatch, listTemplates, updateTemplate } from '../services/boosterService.js';
 import { listUsers, updateUserSprintDays } from '../services/authService.js';
+import { punishRandomCopy } from '../services/collectionService.js';
 import { jiraConfigured, jiraStatusDetailed, listJiraBoards, listJiraSprints, saveSprintAttendance, sprintRewardGuide } from '../services/jiraService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import type { Rarity } from '../types/index.js';
@@ -314,6 +315,16 @@ export async function fetchRemoteArt(req: Request, res: Response, next: NextFunc
     res.setHeader('Content-Type', upstream.headers.get('content-type') || 'image/gif');
     res.setHeader('Cache-Control', 'private, max-age=300');
     res.send(buf);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function postPunishUser(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const userId = Number(req.params.id);
+    const data = await punishRandomCopy(userId);
+    res.status(201).json({ success: true, data });
   } catch (error) {
     next(error);
   }

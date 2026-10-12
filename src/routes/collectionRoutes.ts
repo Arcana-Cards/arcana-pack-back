@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getMyBoosters, getMyCarnets, getMyNotebook, getMyNotebooks, postOpenBooster, postPlaceCopy, postUnplaceCopy } from '../controllers/collectionController.js';
+import { getMyBoosters, getMyBurns, getMyCarnets, getMyNotebook, getMyNotebooks, postAckBurns, postOpenBooster, postPlaceCopy, postUnplaceCopy } from '../controllers/collectionController.js';
 import { authMiddleware } from '../middleware/auth.js';
 
 const router = Router();
@@ -12,5 +12,7 @@ router.get('/carnet', getMyCarnets);
 router.get('/notebooks/:editionId', getMyNotebook);
 router.post('/notebooks/:editionId/place', postPlaceCopy);
 router.post('/notebooks/:editionId/unplace', postUnplaceCopy);
+router.get('/burns', getMyBurns);
+router.post('/burns/ack', postAckBurns);
 
 export default router;

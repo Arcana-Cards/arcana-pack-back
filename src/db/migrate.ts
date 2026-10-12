@@ -19,6 +19,7 @@ const MIGRATION_FILES = [
   'migrate-v10.sql',
   'migrate-v11.sql',
   'migrate-v12.sql',
+  'migrate-v13.sql',
 ] as const;
 
 export async function applyPendingMigrations(connection: Connection): Promise<void> {

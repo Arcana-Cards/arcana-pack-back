@@ -239,6 +239,14 @@ export interface PulledCopyDto {
   card: CardDto;
 }
 
+export interface CardBurnDto {
+  id: number;
+  foil: boolean;
+  animated: boolean;
+  serial: string;
+  card: CardDto;
+}
+
 export interface NotebookSummaryDto {
   editionId: number;
   editionName: string;

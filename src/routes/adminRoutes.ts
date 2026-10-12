@@ -20,6 +20,7 @@ import {
   postEdition,
   postGrant,
   postGrantBatch,
+  postPunishUser,
   getJiraStatus,
   getJiraBoards,
   getJiraSprints,
@@ -66,6 +67,7 @@ router.patch('/boosters/:id', patchTemplate);
 router.delete('/boosters/:id', removeTemplate);
 router.get('/users', getAdminUsers);
 router.patch('/users/:id', patchAdminUser);
+router.post('/users/:id/punish', postPunishUser);
 router.post('/users/:id/boosters', postGrant);
 router.post('/users/boosters/batch', postGrantBatch);
 router.get('/jira/status', getJiraStatus);

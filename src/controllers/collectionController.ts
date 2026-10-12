@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { getNotebook, listCarnets, listNotebooks, listUserBoosters, openBooster, placeCopy, unplaceCopy } from '../services/collectionService.js';
+import { ackBurns, getNotebook, listCarnets, listNotebooks, listUnseenBurns, listUserBoosters, openBooster, placeCopy, unplaceCopy } from '../services/collectionService.js';
 
 export async function getMyBoosters(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -68,6 +68,24 @@ export async function postUnplaceCopy(req: Request, res: Response, next: NextFun
   try {
     const data = await unplaceCopy(req.user!.userId, Number(req.params.editionId), readCopyId(req));
     res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getMyBurns(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    res.json({ success: true, data: await listUnseenBurns(req.user!.userId) });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function postAckBurns(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : undefined;
+    await ackBurns(req.user!.userId, ids);
+    res.json({ success: true, data: { ok: true } });
   } catch (error) {
     next(error);
   }

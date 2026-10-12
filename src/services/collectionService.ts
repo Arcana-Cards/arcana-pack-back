@@ -3,6 +3,7 @@ import pool from '../db/connection.js';
 import { AppError } from '../middleware/errorHandler.js';
 import type {
   BinderPocketDto,
+  CardBurnDto,
   LooseCopyDto,
   NotebookDetailDto,
   NotebookSlotDto,
@@ -92,7 +93,7 @@ export async function openBooster(userId: number, boosterId: number): Promise<Pu
       const pickFrom = candidates.length ? candidates : fallback;
       if (!pickFrom.length) throw new AppError('Pas assez de cartes distinctes dans ce booster', 400);
       const picked = pickFrom[Math.floor(Math.random() * pickFrom.length)];
-      const dropChance = rarityProbability(weights, picked.rarity as Rarity, floor) * 100;
+      const dropChance = rarityProbability(weights, picked.rarity as Rarity) * 100;
       pulledIds.push(picked.id as number);
 
       const foil = Math.random() * 100 < template.foilChance;
@@ -424,4 +425,89 @@ export async function unplaceCopy(userId: number, editionId: number, copyId: num
     [copyId, userId],
   );
   return getNotebook(userId, editionId);
+}
+
+function parseBurnRow(row: RowDataPacket): CardBurnDto {
+  const raw = row.card_json;
+  const card = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  return {
+    id: Number(row.id),
+    foil: asBool(row.foil),
+    animated: asBool(row.animated),
+    serial: String(row.serial),
+    card,
+  };
+}
+
+export async function punishRandomCopy(userId: number): Promise<CardBurnDto> {
+  if (!Number.isInteger(userId) || userId < 1) throw new AppError('Utilisateur invalide', 400);
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [copies] = await conn.execute<RowDataPacket[]>(
+      `SELECT cop.id AS copy_id, cop.foil AS copy_foil, cop.animated AS copy_animated, cop.serial, ${CARD_SELECT}
+       FROM collection_copies cop
+       JOIN cards c ON c.id = cop.card_id
+       JOIN universes u ON u.id = c.universe_id
+       JOIN editions e ON e.id = c.edition_id
+       WHERE cop.user_id = ?
+       ORDER BY RAND()
+       LIMIT 1`,
+      [userId],
+    );
+    if (!copies.length) throw new AppError('Ce collectionneur n’a aucune carte à brûler', 409);
+    const picked = copies[0];
+    const card = mapCard(picked);
+    const foil = asBool(picked.copy_foil);
+    const animated = asBool(picked.copy_animated);
+    const serial = String(picked.serial);
+    const [insert] = await conn.execute<ResultSetHeader>(
+      `INSERT INTO pending_burns (user_id, card_id, foil, animated, serial, card_json)
+       VALUES (?,?,?,?,?,?)`,
+      [userId, card.id, foil ? 1 : 0, animated ? 1 : 0, serial, JSON.stringify(card)],
+    );
+    await conn.execute('DELETE FROM collection_copies WHERE id = ? AND user_id = ?', [picked.copy_id, userId]);
+    await conn.commit();
+    return {
+      id: insert.insertId,
+      foil,
+      animated,
+      serial,
+      card,
+    };
+  } catch (error) {
+    await conn.rollback();
+    throw error;
+  } finally {
+    conn.release();
+  }
+}
+
+export async function listUnseenBurns(userId: number): Promise<CardBurnDto[]> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT id, foil, animated, serial, card_json
+     FROM pending_burns
+     WHERE user_id = ? AND seen_at IS NULL
+     ORDER BY id ASC`,
+    [userId],
+  );
+  return rows.map(parseBurnRow);
+}
+
+export async function ackBurns(userId: number, ids?: number[]): Promise<void> {
+  if (Array.isArray(ids) && ids.length) {
+    const clean = ids.map(Number).filter((id) => Number.isInteger(id) && id > 0);
+    if (!clean.length) return;
+    const placeholders = clean.map(() => '?').join(',');
+    await pool.execute(
+      `UPDATE pending_burns SET seen_at = NOW()
+       WHERE user_id = ? AND seen_at IS NULL AND id IN (${placeholders})`,
+      [userId, ...clean],
+    );
+    return;
+  }
+  await pool.execute(
+    'UPDATE pending_burns SET seen_at = NOW() WHERE user_id = ? AND seen_at IS NULL',
+    [userId],
+  );
 }
