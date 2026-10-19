@@ -50,6 +50,9 @@ export function normalizeCardInput(body: Partial<CardInput>, partial = false): C
   if (body.glowColor && !isHexColor(body.glowColor)) throw new AppError('glowColor invalide', 400);
   if (body.textColor && !isHexColor(body.textColor)) throw new AppError('textColor invalide', 400);
 
+  const artUrl = body.artUrl === undefined ? null : normalizeMediaUrl(body.artUrl);
+  const artAnimatedUrl = body.artAnimatedUrl === undefined ? null : normalizeMediaUrl(body.artAnimatedUrl);
+
   return {
     universeId: Number(body.universeId),
     editionId: Number(body.editionId),
@@ -64,7 +67,7 @@ export function normalizeCardInput(body: Partial<CardInput>, partial = false): C
     subtype: body.subtype?.trim() || null,
     rarity,
     foil: false,
-    animated: Boolean(body.animated),
+    animated: Boolean(artAnimatedUrl),
     borderColor: defaultBorder(rarity),
     backColor: body.backColor || defaultBackColor(style),
     glowColor: body.glowColor || defaultGlow(rarity),
@@ -75,11 +78,11 @@ export function normalizeCardInput(body: Partial<CardInput>, partial = false): C
     toughness: hasStats && body.toughness != null && body.toughness !== ('' as unknown) ? Number(body.toughness) : null,
     artist: body.artist?.trim() || null,
     artSeed: body.artSeed?.trim() || slugifySeed(body.name || 'card'),
-    artUrl: body.artUrl === undefined ? null : normalizeMediaUrl(body.artUrl),
+    artUrl,
     artFilter,
     borderFinish,
-    artAnimatedUrl: body.artAnimatedUrl === undefined ? null : normalizeMediaUrl(body.artAnimatedUrl),
-    giphyUrl: originGiphyUrl(body.artAnimatedUrl, body.artUrl, body.giphyUrl),
+    artAnimatedUrl,
+    giphyUrl: artAnimatedUrl ? originGiphyUrl(body.artAnimatedUrl, body.giphyUrl) : null,
     animatedUnlockCopies: Math.round(unlockRaw),
   };
 }

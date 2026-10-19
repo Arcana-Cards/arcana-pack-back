@@ -5,7 +5,7 @@ import { listCards, getCard, createCard, createCards, updateCard, deleteCard, no
 import { aiStatus, draftFromGif, draftsFromTheme, searchGiphyGifs, type AiProgressEvent } from '../services/aiCardService.js';
 import { createEdition, createUniverse, deleteEdition, deleteUniverse, listEditions, listUniverses, updateEdition, updateUniverse } from '../services/catalogService.js';
 import { createTemplate, deleteTemplate, grantBoosters, grantBoostersBatch, listTemplates, updateTemplate } from '../services/boosterService.js';
-import { listUsers, updateUserSprintDays } from '../services/authService.js';
+import { listUsers, updateAdminUser } from '../services/authService.js';
 import { punishRandomCopy } from '../services/collectionService.js';
 import { jiraConfigured, jiraStatusDetailed, listJiraBoards, listJiraSprints, saveSprintAttendance, sprintRewardGuide } from '../services/jiraService.js';
 import { AppError } from '../middleware/errorHandler.js';
@@ -271,9 +271,14 @@ export async function patchAdminUser(req: Request, res: Response, next: NextFunc
   try {
     const userId = Number(req.params.id);
     if (!Number.isInteger(userId) || userId < 1) throw new AppError('Utilisateur invalide', 400);
-    const raw = req.body?.sprintDays;
-    const days = raw === null || raw === '' || raw === undefined ? null : Number(raw);
-    const data = await updateUserSprintDays(userId, days);
+    const body = req.body || {};
+    const patch: { email?: string; password?: string; sprintDays?: number | null } = {};
+    if (body.email !== undefined) patch.email = String(body.email);
+    if (body.password !== undefined) patch.password = String(body.password);
+    if (body.sprintDays !== undefined) {
+      patch.sprintDays = body.sprintDays === null || body.sprintDays === '' ? null : Number(body.sprintDays);
+    }
+    const data = await updateAdminUser(userId, patch);
     res.json({ success: true, data });
   } catch (error) {
     next(error);

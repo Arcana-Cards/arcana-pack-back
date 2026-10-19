@@ -116,11 +116,52 @@ export async function listUsers(): Promise<UserDto[]> {
 }
 
 export async function updateUserSprintDays(userId: number, days: number | null): Promise<UserDto> {
-  if (days != null && (!Number.isFinite(days) || days < 0 || days > 31)) {
-    throw new AppError('Nombre de jours invalide', 400);
-  }
+  return updateAdminUser(userId, { sprintDays: days });
+}
+
+export async function updateAdminUser(
+  userId: number,
+  input: { email?: string; password?: string; sprintDays?: number | null },
+): Promise<UserDto> {
   const [rows] = await pool.execute<RowDataPacket[]>('SELECT id FROM users WHERE id = ?', [userId]);
   if (!rows.length) throw new AppError('Utilisateur introuvable', 404);
-  await pool.execute('UPDATE users SET sprint_days = ? WHERE id = ?', [days, userId]);
+
+  const sets: string[] = [];
+  const params: Array<string | number | null> = [];
+
+  if (input.email !== undefined) {
+    const email = normalizeEmail(String(input.email || ''));
+    if (!email.includes('@')) throw new AppError('Email invalide', 400);
+    const [dup] = await pool.execute<RowDataPacket[]>(
+      'SELECT id FROM users WHERE email = ? AND id <> ?',
+      [email, userId],
+    );
+    if (dup.length) throw new AppError('Email déjà utilisé', 409);
+    sets.push('email = ?');
+    params.push(email);
+  }
+
+  if (input.password !== undefined) {
+    const password = String(input.password || '');
+    if (!password) throw new AppError('Mot de passe requis', 400);
+    if (password.length < 6) {
+      throw new AppError('Le mot de passe doit faire au moins 6 caractères', 400);
+    }
+    sets.push('password_hash = ?');
+    params.push(await bcrypt.hash(password, 10));
+  }
+
+  if (input.sprintDays !== undefined) {
+    const days = input.sprintDays;
+    if (days != null && (!Number.isFinite(days) || days < 0 || days > 31)) {
+      throw new AppError('Nombre de jours invalide', 400);
+    }
+    sets.push('sprint_days = ?');
+    params.push(days);
+  }
+
+  if (!sets.length) throw new AppError('Aucun champ à mettre à jour', 400);
+  params.push(userId);
+  await pool.execute(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, params);
   return getProfile(userId);
 }
